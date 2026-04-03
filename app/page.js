@@ -35,6 +35,9 @@ export default function Home() {
   const [filterStatus, setFilterStatus] = useState("All");
   const [reply, setReply] = useState("");
   const [toast, setToast] = useState("");
+  const [bulkText, setBulkText] = useState("");
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
 
   useEffect(() => {
     try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) setThreads(JSON.parse(raw)); } catch {}
@@ -71,6 +74,28 @@ export default function Home() {
 
   const deleteThread = (id) => { save(threads.filter((t) => t.id !== id)); setView("list"); setSelected(null); showToast("Thread removed."); };
 
+  const handleBulkImport = async () => {
+    const urls = [...new Set(bulkText.match(/https:\/\/x\.com\/[^\s"')]+/g) || [])];
+    if (urls.length === 0) { showToast("No X links found!"); return; }
+    setBulkLoading(true);
+    setBulkProgress({ current: 0, total: urls.length });
+    const newThreads = [];
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      setBulkProgress({ current: i + 1, total: urls.length });
+      try {
+        const summary = await callClaude(`You are a helpful assistant for a marketing executive. Given this X (Twitter) thread URL: ${url}\n\nGenerate an insightful summary. Guess the topic from the username. Format:\n\nSUMMARY: (2-3 sentences)\nKEY TAKEAWAYS:\n- point 1\n- point 2\n- point 3\n\nMake it relevant and actionable for a marketing head.`);
+        newThreads.push({ id: Date.now() + i, url, category: "AI", notes: "", summary, status: "Unread", addedAt: new Date().toLocaleDateString() });
+      } catch { newThreads.push({ id: Date.now() + i, url, category: "AI", notes: "", summary: "Could not summarize.", status: "Unread", addedAt: new Date().toLocaleDateString() }); }
+    }
+    const updated = [...newThreads, ...threads];
+    save(updated);
+    setBulkLoading(false);
+    setBulkText("");
+    setView("list");
+    showToast(`✅ Imported ${newThreads.length} threads!`);
+  };
+
   const filtered = threads.filter((t) => (filterCat === "All" || t.category === filterCat) && (filterStatus === "All" || t.status === filterStatus));
   const counts = STATUS.reduce((acc, s) => { acc[s] = threads.filter((t) => t.status === s).length; return acc; }, {});
 
@@ -81,10 +106,40 @@ export default function Home() {
           <h1 className="text-lg font-bold text-gray-800">📌 CEO Thread Tracker</h1>
           <p className="text-xs text-gray-500">Capture → Summarize → Reply → Act</p>
         </div>
-        <button onClick={() => { setView("add"); setReply(""); }} className="bg-blue-600 text-white text-sm px-3 py-2 rounded-lg font-medium hover:bg-blue-700 transition">+ Add Thread</button>
+        <div className="flex gap-2">
+          <button onClick={() => { setView("bulk"); }} className="bg-green-600 text-white text-sm px-3 py-2 rounded-lg font-medium hover:bg-green-700 transition">⬆ Bulk Import</button>
+          <button onClick={() => { setView("add"); setReply(""); }} className="bg-blue-600 text-white text-sm px-3 py-2 rounded-lg font-medium hover:bg-blue-700 transition">+ Add Thread</button>
+        </div>
       </div>
 
       {toast && <div className="fixed top-16 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-sm px-4 py-2 rounded-full shadow-lg z-50">{toast}</div>}
+
+      {view === "bulk" && (
+        <div className="max-w-lg mx-auto p-4 mt-4">
+          <div className="bg-white rounded-xl shadow p-5 space-y-4">
+            <h2 className="font-bold text-gray-700">Bulk Import from Teams Chat</h2>
+            <p className="text-xs text-gray-500">Paste your entire Teams conversation below. The app will automatically find all X links and summarize them.</p>
+            <textarea
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
+              rows={8}
+              placeholder="Paste your Teams conversation here..."
+              value={bulkText}
+              onChange={(e) => setBulkText(e.target.value)}
+            />
+            {bulkLoading && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-700">
+                <Spinner />Summarizing {bulkProgress.current} of {bulkProgress.total} links...
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button onClick={handleBulkImport} disabled={bulkLoading || !bulkText.trim()} className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition">
+                {bulkLoading ? "Importing..." : "⬆ Import All Links"}
+              </button>
+              <button onClick={() => setView("list")} className="px-4 py-2 rounded-lg text-sm border hover:bg-gray-50 transition">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {view === "add" && (
         <div className="max-w-lg mx-auto p-4 mt-4">
@@ -182,7 +237,7 @@ export default function Home() {
             <div className="text-center text-gray-400 py-16">
               <div className="text-4xl mb-3">📭</div>
               <p className="font-semibold">No threads yet</p>
-              <p className="text-sm mt-1">Paste your CEO&apos;s next X link and hit Add Thread!</p>
+              <p className="text-sm mt-1">Paste your CEO's next X link and hit Add Thread!</p>
             </div>
           ) : (
             filtered.map((t) => (
