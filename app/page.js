@@ -39,17 +39,23 @@ const PRELOADED = [
   { url: "https://x.com/simonecanciello/status/2039449221850423451", sharedAt: "02 Apr 2026" },
 ];
 
-const TAG_COLORS = {
-  "AI & Automation": "bg-purple-100 text-purple-700 border-purple-200",
-  "Content & Video": "bg-pink-100 text-pink-700 border-pink-200",
-  "SEO & GEO": "bg-green-100 text-green-700 border-green-200",
-  "Outbound & Sales": "bg-orange-100 text-orange-700 border-orange-200",
-  "Strategy": "bg-blue-100 text-blue-700 border-blue-200",
-  "Tools": "bg-yellow-100 text-yellow-700 border-yellow-200",
+const TAG_STYLES = {
+  "AI & Automation":   { dot: "bg-orange-400",  badge: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
+  "Content & Video":   { dot: "bg-pink-400",    badge: "bg-pink-500/10 text-pink-400 border-pink-500/20" },
+  "SEO & GEO":         { dot: "bg-emerald-400", badge: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
+  "Outbound & Sales":  { dot: "bg-blue-400",    badge: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
+  "Strategy":          { dot: "bg-purple-400",  badge: "bg-purple-500/10 text-purple-400 border-purple-500/20" },
+  "Tools":             { dot: "bg-yellow-400",  badge: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" },
 };
 
-function Spinner({ dark }) {
-  return <span className={`inline-block w-4 h-4 border-2 ${dark ? "border-gray-600 border-t-transparent" : "border-white border-t-transparent"} rounded-full animate-spin align-middle mr-1`} />;
+const STATUS_STYLES = {
+  Unread:   "bg-red-500/10 text-red-400 border-red-500/20",
+  Read:     "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+  Actioned: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+};
+
+function Spinner() {
+  return <span className="inline-block w-3.5 h-3.5 border-2 border-orange-400 border-t-transparent rounded-full animate-spin align-middle mr-1.5" />;
 }
 
 async function callClaude(prompt) {
@@ -64,7 +70,7 @@ async function callClaude(prompt) {
 
 export default function Home() {
   const [threads, setThreads] = useState([]);
-  const [view, setView] = useState("dashboard"); // dashboard | detail | patterns | add
+  const [view, setView] = useState("dashboard");
   const [selected, setSelected] = useState(null);
   const [initializing, setInitializing] = useState(false);
   const [initProgress, setInitProgress] = useState({ current: 0, total: 0 });
@@ -74,68 +80,56 @@ export default function Home() {
   const [loadingReply, setLoadingReply] = useState(false);
   const [toast, setToast] = useState("");
   const [expandedId, setExpandedId] = useState(null);
+  const [form, setForm] = useState({ url: "", sharedAt: "" });
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
-
-  const save = (data) => { setThreads(data); localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); };
+  const save = (data) => { setThreads([...data]); localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); };
 
   const analyzeThread = async (thread) => {
     const handle = thread.url.match(/x\.com\/([^/]+)/)?.[1] || "unknown";
-    const text = await callClaude(`You are an AI advisor for a marketing head at a B2B tech services company. Their CEO shared this X thread on ${thread.sharedAt}.
+    const text = await callClaude(`You are an AI advisor for a marketing head at Zeb, a B2B AI transformation services company. Their CEO shared this X thread on ${thread.sharedAt}.
 URL: ${thread.url}
 Author: @${handle}
 
-Based on the author handle and context of a B2B tech marketing team, infer what this thread is likely about.
+Based on the author and Zeb's focus on AI, marketing, automation and B2B tech, infer what this thread is about.
 
-Reply in EXACT format (no extra text):
-TITLE: (5-8 word catchy title for what this thread is about)
-TAG: (pick ONE: AI & Automation / Content & Video / SEO & GEO / Outbound & Sales / Strategy / Tools)
-INSIGHT: (1-2 sentences - the core insight the CEO wants the team to know)
-TAKEAWAY1: (concrete action the marketing team should take)
-TAKEAWAY2: (another concrete action)
-TAKEAWAY3: (another concrete action)
-USE: (1 sentence - how to apply this THIS WEEK)`);
-    const g = (key, multi) => {
-      const rx = multi ? new RegExp(`${key}:\\s*([\\s\\S]+?)(?=\\n[A-Z]+:|$)`) : new RegExp(`${key}:\\s*(.+)`);
-      return text.match(rx)?.[1]?.trim() || "";
-    };
-    return {
-      ...thread,
-      title: g("TITLE"),
-      tag: g("TAG"),
-      insight: g("INSIGHT"),
-      takeaways: [g("TAKEAWAY1"), g("TAKEAWAY2"), g("TAKEAWAY3")].filter(Boolean),
-      use: g("USE"),
-      status: thread.status || "Unread",
-    };
+Reply in EXACT format:
+TITLE: (5-8 word title)
+TAG: (one of: AI & Automation / Content & Video / SEO & GEO / Outbound & Sales / Strategy / Tools)
+INSIGHT: (1-2 sentences core insight)
+TAKEAWAY1: (specific action for Zeb marketing team)
+TAKEAWAY2: (specific action)
+TAKEAWAY3: (specific action)
+USE: (1 sentence - apply this week)`);
+    const g = (key) => text.match(new RegExp(`${key}:\\s*(.+)`))?.[1]?.trim() || "";
+    return { ...thread, title: g("TITLE"), tag: g("TAG"), insight: g("INSIGHT"), takeaways: [g("TAKEAWAY1"), g("TAKEAWAY2"), g("TAKEAWAY3")].filter(Boolean), use: g("USE"), status: thread.status || "Unread" };
   };
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) { const parsed = JSON.parse(raw); setThreads(parsed); return; }
+      if (raw) { setThreads(JSON.parse(raw)); return; }
     } catch {}
-    // First load - seed unsummarized
     const seeded = PRELOADED.map((p, i) => ({ id: i + 1, ...p, title: "", tag: "", insight: "", takeaways: [], use: "", status: "Unread" }));
     setThreads(seeded);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
-    // Auto-start summarizing
     startSummarizeAll(seeded);
   }, []);
 
   const startSummarizeAll = async (initial) => {
-    const toProcess = (initial || threads).filter(t => !t.insight);
-    if (toProcess.length === 0) return;
+    const src = initial || threads;
+    const todo = src.filter(t => !t.insight);
+    if (!todo.length) return;
     setInitializing(true);
-    setInitProgress({ current: 0, total: toProcess.length });
-    let current = [...(initial || threads)];
-    for (let i = 0; i < toProcess.length; i++) {
-      setInitProgress({ current: i + 1, total: toProcess.length });
+    setInitProgress({ current: 0, total: todo.length });
+    let cur = [...src];
+    for (let i = 0; i < todo.length; i++) {
+      setInitProgress({ current: i + 1, total: todo.length });
       try {
-        const updated = await analyzeThread(toProcess[i]);
-        current = current.map(t => t.id === updated.id ? updated : t);
-        setThreads([...current]);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+        const updated = await analyzeThread(todo[i]);
+        cur = cur.map(t => t.id === updated.id ? updated : t);
+        setThreads([...cur]);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(cur));
       } catch {}
     }
     setInitializing(false);
@@ -144,38 +138,15 @@ USE: (1 sentence - how to apply this THIS WEEK)`);
 
   const handlePatterns = async () => {
     setLoadingPatterns(true); setPatterns("");
-    const summarized = threads.filter(t => t.insight);
-    const list = summarized.map(t => `[${t.sharedAt}] ${t.title} (${t.tag}) — ${t.insight}`).join("\n");
-    const r = await callClaude(`You are a strategic advisor. A CEO has been sharing these X threads with his marketing team over several months:
-
-${list}
-
-Analyze and respond with:
-
-🎯 WHAT THE CEO WANTS (2-3 sentences on the CEO's overall message to the marketing team)
-
-🔗 KEY THEMES
-- Theme 1: (name + which links relate + what it means)
-- Theme 2:
-- Theme 3:
-- Theme 4:
-
-📈 PATTERN OVER TIME (how the CEO's focus has evolved from Jan to Apr 2026)
-
-⚡ TOP 3 PRIORITY ACTIONS FOR THE MARKETING HEAD RIGHT NOW`);
-    setPatterns(r);
-    setLoadingPatterns(false);
+    const s = threads.filter(t => t.insight);
+    const list = s.map(t => `[${t.sharedAt}] ${t.title} (${t.tag}) — ${t.insight}`).join("\n");
+    const r = await callClaude(`You are a strategic advisor for Zeb's marketing head. Their CEO has shared these X threads over several months:\n\n${list}\n\nAnalyze and respond with:\n\n🎯 WHAT THE CEO WANTS\n(2-3 sentences)\n\n🔗 KEY THEMES\n- Theme 1: name + related threads + meaning\n- Theme 2:\n- Theme 3:\n- Theme 4:\n\n📈 PATTERN OVER TIME\n(how CEO focus evolved Jan–Apr 2026)\n\n⚡ TOP 3 PRIORITY ACTIONS FOR MARKETING HEAD NOW`);
+    setPatterns(r); setLoadingPatterns(false);
   };
 
   const handleReply = async (t) => {
     setLoadingReply(true); setReply("");
-    const r = await callClaude(`You are a marketing head replying to your CEO on Microsoft Teams.
-Thread: ${t.title}
-Shared on: ${t.sharedAt}
-Insight: ${t.insight}
-How to use: ${t.use}
-
-Write a 3-4 sentence Teams reply that: acknowledges the share warmly, references the specific insight, and states one concrete thing you will do this week based on it. Sound natural and engaged, not corporate.`);
+    const r = await callClaude(`You are Zeb's marketing head replying to the CEO on Microsoft Teams.\nThread: ${t.title}\nShared: ${t.sharedAt}\nInsight: ${t.insight}\nAction: ${t.use}\n\nWrite a 3-4 sentence Teams reply: warm acknowledgment, reference the specific insight, state one concrete thing you will do this week. Sound natural, engaged, not corporate.`);
     setReply(r); setLoadingReply(false);
   };
 
@@ -185,167 +156,191 @@ Write a 3-4 sentence Teams reply that: acknowledges the share warmly, references
     if (selected?.id === id) setSelected(prev => ({ ...prev, status }));
   };
 
-  // Group by tag for dashboard
+  const handleAdd = async () => {
+    if (!form.url.trim()) return;
+    const thread = { id: Date.now(), url: form.url, sharedAt: form.sharedAt || new Date().toLocaleDateString(), title: "", tag: "", insight: "", takeaways: [], use: "", status: "Unread" };
+    const analyzed = await analyzeThread(thread);
+    save([analyzed, ...threads]);
+    setForm({ url: "", sharedAt: "" });
+    setView("dashboard");
+    showToast("Thread added!");
+  };
+
   const grouped = threads.reduce((acc, t) => {
-    const key = t.tag || "Uncategorized";
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(t);
+    const k = t.tag || "Uncategorized";
+    if (!acc[k]) acc[k] = [];
+    acc[k].push(t);
     return acc;
   }, {});
 
   const summarizedCount = threads.filter(t => t.insight).length;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: "#0a0a0a", color: "#f5f5f5" }}>
+
       {/* Header */}
-      <div className="bg-white border-b px-4 py-3 flex items-center justify-between sticky top-0 z-10 shadow-sm">
-        <div className="flex items-center gap-3">
+      <div style={{ background: "#0f0f0f", borderBottom: "1px solid #222" }} className="px-5 py-4 flex items-center justify-between sticky top-0 z-20">
+        <div className="flex items-center gap-4">
           <div>
-            <h1 className="text-base font-bold text-gray-800">📌 CEO Thread Tracker</h1>
-            <p className="text-xs text-gray-400">{summarizedCount}/{threads.length} analyzed</p>
+            <div className="flex items-center gap-2">
+              <span style={{ color: "#f97316" }} className="font-bold text-lg">zeb</span>
+              <span style={{ color: "#444", fontSize: 14 }}>|</span>
+              <span className="text-sm font-semibold text-gray-300">CEO Thread Tracker</span>
+            </div>
+            <p style={{ color: "#555" }} className="text-xs mt-0.5">{summarizedCount}/{threads.length} analyzed · Capture → Insight → Act</p>
           </div>
           {initializing && (
-            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 px-3 py-1 rounded-full">
-              <Spinner dark />
-              <span className="text-xs text-blue-700 font-semibold">Analyzing {initProgress.current}/{initProgress.total}...</span>
+            <div style={{ background: "#1a1a1a", border: "1px solid #333" }} className="flex items-center gap-2 px-3 py-1.5 rounded-full">
+              <Spinner />
+              <span style={{ color: "#f97316" }} className="text-xs font-semibold">Analyzing {initProgress.current}/{initProgress.total}</span>
             </div>
           )}
         </div>
         <div className="flex gap-2">
           {!initializing && summarizedCount < threads.length && (
-            <button onClick={() => startSummarizeAll()} className="bg-blue-600 text-white text-xs px-3 py-2 rounded-lg font-medium hover:bg-blue-700 transition">✨ Analyze Remaining</button>
+            <button onClick={() => startSummarizeAll()} style={{ background: "#f97316" }} className="text-white text-xs px-3 py-2 rounded-lg font-semibold hover:opacity-90 transition">✨ Analyze All</button>
           )}
-          <button onClick={() => { setView("patterns"); setPatterns(""); }} className="bg-indigo-600 text-white text-xs px-3 py-2 rounded-lg font-medium hover:bg-indigo-700 transition">🔗 CEO Patterns</button>
-          <button onClick={() => setView(view === "dashboard" ? "list" : "dashboard")} className="border text-gray-600 text-xs px-3 py-2 rounded-lg font-medium hover:bg-gray-50 transition">
-            {view === "dashboard" ? "📋 List" : "🏠 Dashboard"}
-          </button>
+          <button onClick={() => { setView("patterns"); setPatterns(""); }} style={{ background: "#1a1a1a", border: "1px solid #333" }} className="text-gray-300 text-xs px-3 py-2 rounded-lg font-semibold hover:border-orange-500 transition">🔗 CEO Patterns</button>
+          <button onClick={() => setView("add")} style={{ background: "#1a1a1a", border: "1px solid #333" }} className="text-gray-300 text-xs px-3 py-2 rounded-lg font-semibold hover:border-orange-500 transition">+ Add</button>
         </div>
       </div>
 
-      {toast && <div className="fixed top-16 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-sm px-4 py-2 rounded-full shadow-lg z-50">{toast}</div>}
+      {toast && <div className="fixed top-16 left-1/2 -translate-x-1/2 text-white text-sm px-4 py-2 rounded-full shadow-lg z-50" style={{ background: "#f97316" }}>{toast}</div>}
 
-      {/* DASHBOARD VIEW */}
+      {/* DASHBOARD */}
       {view === "dashboard" && (
-        <div className="max-w-5xl mx-auto p-4 mt-4 space-y-6">
+        <div className="max-w-5xl mx-auto p-5 space-y-5">
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3">
-            {[["🔴", "Unread", threads.filter(t => t.status === "Unread").length, "bg-red-50 border-red-200"],
-              ["🟡", "Read", threads.filter(t => t.status === "Read").length, "bg-yellow-50 border-yellow-200"],
-              ["🟢", "Actioned", threads.filter(t => t.status === "Actioned").length, "bg-green-50 border-green-200"]
-            ].map(([icon, label, count, cls]) => (
-              <div key={label} className={`rounded-xl p-3 text-center border ${cls}`}>
-                <div className="text-2xl font-bold text-gray-800">{count}</div>
-                <div className="text-xs font-semibold text-gray-500">{icon} {label}</div>
+            {[["Unread", threads.filter(t => t.status === "Unread").length, "#ef4444"],
+              ["Read", threads.filter(t => t.status === "Read").length, "#eab308"],
+              ["Actioned", threads.filter(t => t.status === "Actioned").length, "#22c55e"]
+            ].map(([label, count, color]) => (
+              <div key={label} style={{ background: "#141414", border: "1px solid #222" }} className="rounded-xl p-4 text-center">
+                <div className="text-3xl font-bold" style={{ color }}>{count}</div>
+                <div className="text-xs mt-1" style={{ color: "#666" }}>{label}</div>
               </div>
             ))}
           </div>
 
-          {/* Tree view grouped by theme */}
-          {Object.entries(grouped).map(([tag, items]) => (
-            <div key={tag} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-              {/* Theme header */}
-              <div className={`px-4 py-3 flex items-center justify-between border-b ${TAG_COLORS[tag] || "bg-gray-50 border-gray-200"}`}>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm">{tag}</span>
-                  <span className="text-xs opacity-70">{items.length} threads</span>
-                </div>
-                <span className="text-xs opacity-60">{items.filter(t => t.insight).length} analyzed</span>
-              </div>
-
-              {/* Thread cards in this theme */}
-              <div className="divide-y">
-                {items.map(t => (
-                  <div key={t.id} className="p-4">
-                    {/* Thread header - always visible */}
-                    <div className="flex items-start justify-between gap-2 cursor-pointer" onClick={() => setExpandedId(expandedId === t.id ? null : t.id)}>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${t.status === "Actioned" ? "bg-green-100 text-green-700" : t.status === "Read" ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700"}`}>{t.status}</span>
-                          <span className="text-xs text-gray-400">{t.sharedAt}</span>
-                        </div>
-                        {t.title ? (
-                          <p className="font-semibold text-gray-800 text-sm mt-1">📌 {t.title}</p>
-                        ) : (
-                          <p className="text-xs text-gray-400 mt-1 truncate">{t.url}</p>
-                        )}
-                        {t.insight && <p className="text-sm text-gray-600 mt-1 line-clamp-2">{t.insight}</p>}
-                      </div>
-                      <span className="text-gray-400 text-sm mt-1">{expandedId === t.id ? "▲" : "▼"}</span>
-                    </div>
-
-                    {/* Expanded detail */}
-                    {expandedId === t.id && (
-                      <div className="mt-4 space-y-3 border-t pt-4">
-                        <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline break-all block">{t.url}</a>
-
-                        {t.takeaways?.length > 0 && (
-                          <div className="bg-blue-50 rounded-lg p-3">
-                            <p className="text-xs font-bold text-blue-700 uppercase mb-2">🎯 Key Takeaways</p>
-                            <ul className="space-y-1">
-                              {t.takeaways.map((tk, i) => <li key={i} className="text-sm text-gray-700 flex gap-2"><span className="text-blue-400 font-bold">{i+1}.</span>{tk}</li>)}
-                            </ul>
-                          </div>
-                        )}
-
-                        {t.use && (
-                          <div className="bg-green-50 rounded-lg p-3">
-                            <p className="text-xs font-bold text-green-700 uppercase mb-1">🚀 Use This Week</p>
-                            <p className="text-sm text-gray-700">{t.use}</p>
-                          </div>
-                        )}
-
-                        {/* Status + Reply */}
-                        <div className="flex gap-2 flex-wrap">
-                          {["Unread", "Read", "Actioned"].map(s => (
-                            <button key={s} onClick={() => updateStatus(t.id, s)} className={`text-xs px-3 py-1 rounded-lg border font-semibold transition ${t.status === s ? "bg-blue-600 text-white border-blue-600" : "hover:bg-gray-100"}`}>{s}</button>
-                          ))}
-                          <button onClick={() => { setSelected(t); setView("reply"); setReply(""); handleReply(t); }} className="text-xs px-3 py-1 rounded-lg bg-purple-600 text-white font-semibold hover:bg-purple-700 transition ml-auto">💬 Get Reply Draft</button>
-                        </div>
-                      </div>
-                    )}
+          {/* Grouped tree */}
+          {Object.entries(grouped).map(([tag, items]) => {
+            const style = TAG_STYLES[tag] || { dot: "bg-gray-400", badge: "bg-gray-500/10 text-gray-400 border-gray-500/20" };
+            return (
+              <div key={tag} style={{ background: "#141414", border: "1px solid #222" }} className="rounded-xl overflow-hidden">
+                {/* Group header */}
+                <div style={{ background: "#1a1a1a", borderBottom: "1px solid #222" }} className="px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${style.dot}`} />
+                    <span className="font-semibold text-sm text-gray-200">{tag}</span>
+                    <span style={{ color: "#555" }} className="text-xs">{items.length} threads</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+                  <span style={{ color: "#555" }} className="text-xs">{items.filter(t => t.insight).length} analyzed</span>
+                </div>
 
-      {/* LIST VIEW */}
-      {view === "list" && (
-        <div className="max-w-2xl mx-auto p-4 mt-4 space-y-3">
-          {threads.map(t => (
-            <div key={t.id} onClick={() => { setSelected(t); setView("reply"); setReply(""); }} className="bg-white rounded-xl shadow-sm border p-4 cursor-pointer hover:shadow-md transition">
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${t.status === "Actioned" ? "bg-green-100 text-green-700" : t.status === "Read" ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700"}`}>{t.status}</span>
-                <span className="text-xs text-gray-400">{t.sharedAt}</span>
+                {/* Threads */}
+                <div className="divide-y" style={{ borderColor: "#1e1e1e" }}>
+                  {items.map(t => (
+                    <div key={t.id} style={{ borderColor: "#1e1e1e" }}>
+                      {/* Row */}
+                      <div className="px-4 py-3 flex items-start gap-3 cursor-pointer hover:bg-white/[0.02] transition" onClick={() => setExpandedId(expandedId === t.id ? null : t.id)}>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold ${STATUS_STYLES[t.status]}`}>{t.status}</span>
+                            <span style={{ color: "#555" }} className="text-xs">{t.sharedAt}</span>
+                            {!t.insight && <span style={{ color: "#f97316", background: "#f97316/10" }} className="text-xs px-2 py-0.5 rounded-full border border-orange-500/20 bg-orange-500/5">pending</span>}
+                          </div>
+                          {t.title
+                            ? <p className="text-sm font-semibold text-gray-200">📌 {t.title}</p>
+                            : <p style={{ color: "#555" }} className="text-xs truncate">{t.url}</p>
+                          }
+                          {t.insight && <p style={{ color: "#888" }} className="text-xs mt-1 line-clamp-2">{t.insight}</p>}
+                        </div>
+                        <span style={{ color: "#444" }} className="text-xs mt-1 shrink-0">{expandedId === t.id ? "▲" : "▼"}</span>
+                      </div>
+
+                      {/* Expanded */}
+                      {expandedId === t.id && (
+                        <div className="px-4 pb-4 space-y-3" style={{ borderTop: "1px solid #1e1e1e", paddingTop: 16 }}>
+                          <a href={t.url} target="_blank" rel="noopener noreferrer" style={{ color: "#f97316" }} className="text-xs hover:underline break-all block">{t.url}</a>
+
+                          {t.takeaways?.length > 0 && (
+                            <div style={{ background: "#1a1a1a", border: "1px solid #2a2a2a" }} className="rounded-lg p-3">
+                              <p style={{ color: "#f97316" }} className="text-xs font-bold uppercase mb-2">🎯 Key Takeaways</p>
+                              <ul className="space-y-1.5">
+                                {t.takeaways.map((tk, i) => (
+                                  <li key={i} className="text-sm text-gray-300 flex gap-2">
+                                    <span style={{ color: "#f97316" }} className="font-bold shrink-0">{i + 1}.</span>{tk}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {t.use && (
+                            <div style={{ background: "#0f1f0f", border: "1px solid #1a3a1a" }} className="rounded-lg p-3">
+                              <p style={{ color: "#22c55e" }} className="text-xs font-bold uppercase mb-1">🚀 Use This Week</p>
+                              <p className="text-sm text-gray-300">{t.use}</p>
+                            </div>
+                          )}
+
+                          <div className="flex gap-2 flex-wrap items-center">
+                            {["Unread", "Read", "Actioned"].map(s => (
+                              <button key={s} onClick={() => updateStatus(t.id, s)}
+                                style={t.status === s
+                                  ? { background: "#f97316", border: "1px solid #f97316", color: "#fff" }
+                                  : { background: "transparent", border: "1px solid #333", color: "#888" }}
+                                className="text-xs px-3 py-1.5 rounded-lg font-semibold transition hover:border-orange-500">
+                                {s}
+                              </button>
+                            ))}
+                            <button onClick={() => { setSelected(t); setView("reply"); setReply(""); handleReply(t); }}
+                              style={{ background: "#1a1a1a", border: "1px solid #333", color: "#ccc" }}
+                              className="text-xs px-3 py-1.5 rounded-lg font-semibold hover:border-orange-500 transition ml-auto">
+                              💬 Draft Reply
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-              {t.title && <p className="font-semibold text-sm text-gray-800">📌 {t.title}</p>}
-              {t.tag && <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold ${TAG_COLORS[t.tag] || "bg-gray-100 text-gray-600"}`}>{t.tag}</span>}
-              {t.insight && <p className="text-sm text-gray-600 mt-1 line-clamp-2">{t.insight}</p>}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* REPLY VIEW */}
       {view === "reply" && selected && (
-        <div className="max-w-2xl mx-auto p-4 mt-4 space-y-4">
-          <button onClick={() => setView("dashboard")} className="text-sm text-blue-600 hover:underline">← Back to Dashboard</button>
-          <div className="bg-white rounded-xl shadow p-5 space-y-4">
-            <p className="font-bold text-gray-800">📌 {selected.title}</p>
-            <p className="text-xs text-gray-400">{selected.sharedAt} · {selected.tag}</p>
-            <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700">{selected.insight}</div>
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-              <div className="flex justify-between items-center mb-2">
-                <p className="text-xs font-bold text-purple-700 uppercase">💬 Teams Reply Draft</p>
-                {reply && <button onClick={() => { navigator.clipboard.writeText(reply); showToast("Copied!"); }} className="text-xs text-purple-600 font-semibold hover:underline">Copy</button>}
+        <div className="max-w-2xl mx-auto p-5 mt-4 space-y-4">
+          <button onClick={() => setView("dashboard")} style={{ color: "#f97316" }} className="text-sm hover:underline">← Back</button>
+          <div style={{ background: "#141414", border: "1px solid #222" }} className="rounded-xl p-5 space-y-4">
+            <p className="font-bold text-gray-100">📌 {selected.title}</p>
+            <p style={{ color: "#555" }} className="text-xs">{selected.sharedAt} · {selected.tag}</p>
+            <div style={{ background: "#1a1a1a", border: "1px solid #2a2a2a" }} className="rounded-lg p-3 text-sm text-gray-300">{selected.insight}</div>
+            <div style={{ background: "#1a0f00", border: "1px solid #3a2000" }} className="rounded-lg p-4">
+              <div className="flex justify-between items-center mb-3">
+                <p style={{ color: "#f97316" }} className="text-xs font-bold uppercase">💬 Teams Reply Draft</p>
+                {reply && (
+                  <button onClick={() => { navigator.clipboard.writeText(reply); showToast("Copied!"); }}
+                    style={{ color: "#f97316" }} className="text-xs font-semibold hover:underline">Copy</button>
+                )}
               </div>
-              {loadingReply ? <div className="flex items-center text-sm text-purple-600"><Spinner dark />Generating...</div> : <p className="text-sm text-gray-800 whitespace-pre-wrap">{reply}</p>}
+              {loadingReply
+                ? <div className="flex items-center text-sm text-gray-400"><Spinner />Generating...</div>
+                : <p className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{reply}</p>
+              }
             </div>
             <div className="flex gap-2">
               {["Unread", "Read", "Actioned"].map(s => (
-                <button key={s} onClick={() => updateStatus(selected.id, s)} className={`flex-1 text-xs py-2 rounded-lg border font-semibold transition ${selected.status === s ? "bg-blue-600 text-white border-blue-600" : "hover:bg-gray-100"}`}>{s}</button>
+                <button key={s} onClick={() => updateStatus(selected.id, s)}
+                  style={selected.status === s
+                    ? { background: "#f97316", border: "1px solid #f97316", color: "#fff" }
+                    : { background: "transparent", border: "1px solid #333", color: "#888" }}
+                  className="flex-1 text-xs py-2 rounded-lg font-semibold transition">
+                  {s}
+                </button>
               ))}
             </div>
           </div>
@@ -354,17 +349,48 @@ Write a 3-4 sentence Teams reply that: acknowledges the share warmly, references
 
       {/* PATTERNS VIEW */}
       {view === "patterns" && (
-        <div className="max-w-2xl mx-auto p-4 mt-4 space-y-4">
-          <button onClick={() => setView("dashboard")} className="text-sm text-blue-600 hover:underline">← Back</button>
-          <div className="bg-white rounded-xl shadow p-5 space-y-4">
-            <h2 className="font-bold text-gray-800 text-lg">🔗 What is your CEO trying to tell you?</h2>
-            <p className="text-sm text-gray-500">AI analysis of all {summarizedCount} threads to find patterns, themes and what your CEO wants you to prioritize.</p>
+        <div className="max-w-2xl mx-auto p-5 mt-4 space-y-4">
+          <button onClick={() => setView("dashboard")} style={{ color: "#f97316" }} className="text-sm hover:underline">← Back</button>
+          <div style={{ background: "#141414", border: "1px solid #222" }} className="rounded-xl p-5 space-y-4">
+            <h2 className="font-bold text-gray-100 text-lg">🔗 What is your CEO telling you?</h2>
+            <p style={{ color: "#666" }} className="text-sm">AI analysis of {summarizedCount} threads to find themes and priorities.</p>
             {!patterns && (
-              <button onClick={handlePatterns} disabled={loadingPatterns || summarizedCount === 0} className="w-full bg-indigo-600 text-white py-3 rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition">
-                {loadingPatterns ? <><Spinner />Analyzing all threads...</> : "🔍 Analyze CEO Patterns"}
+              <button onClick={handlePatterns} disabled={loadingPatterns || summarizedCount === 0}
+                style={{ background: "#f97316" }} className="w-full text-white py-3 rounded-lg text-sm font-bold hover:opacity-90 disabled:opacity-50 transition">
+                {loadingPatterns ? <><Spinner />Analyzing...</> : "🔍 Analyze CEO Patterns"}
               </button>
             )}
-            {patterns && <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{patterns}</div>}
+            {patterns && (
+              <div style={{ background: "#1a1a1a", border: "1px solid #2a2a2a" }} className="rounded-lg p-4 text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{patterns}</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ADD VIEW */}
+      {view === "add" && (
+        <div className="max-w-lg mx-auto p-5 mt-4">
+          <button onClick={() => setView("dashboard")} style={{ color: "#f97316" }} className="text-sm hover:underline mb-4 block">← Back</button>
+          <div style={{ background: "#141414", border: "1px solid #222" }} className="rounded-xl p-5 space-y-4">
+            <h2 className="font-bold text-gray-100">Add New Thread</h2>
+            <div>
+              <label style={{ color: "#666" }} className="text-xs font-semibold uppercase block mb-1">X Thread URL</label>
+              <input style={{ background: "#1a1a1a", border: "1px solid #333", color: "#f5f5f5" }}
+                className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+                placeholder="https://x.com/..."
+                value={form.url} onChange={e => setForm({ ...form, url: e.target.value })} />
+            </div>
+            <div>
+              <label style={{ color: "#666" }} className="text-xs font-semibold uppercase block mb-1">Date Shared</label>
+              <input style={{ background: "#1a1a1a", border: "1px solid #333", color: "#f5f5f5" }}
+                className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+                placeholder="e.g. 03 Apr 2026"
+                value={form.sharedAt} onChange={e => setForm({ ...form, sharedAt: e.target.value })} />
+            </div>
+            <button onClick={handleAdd} disabled={!form.url.trim()}
+              style={{ background: "#f97316" }} className="w-full text-white py-2.5 rounded-lg text-sm font-bold hover:opacity-90 disabled:opacity-50 transition">
+              ✨ Add & Analyze
+            </button>
           </div>
         </div>
       )}
