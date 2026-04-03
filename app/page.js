@@ -182,7 +182,7 @@ export default function Home() {
             <div className="text-center text-gray-400 py-16">
               <div className="text-4xl mb-3">📭</div>
               <p className="font-semibold">No threads yet</p>
-              <p className="text-sm mt-1">Paste your CEO's next X link and hit Add Thread!</p>
+              <p className="text-sm mt-1">Paste your CEO&apos;s next X link and hit Add Thread!</p>
             </div>
           ) : (
             filtered.map((t) => (
